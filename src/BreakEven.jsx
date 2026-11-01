@@ -1,10 +1,9 @@
 import { useMemo } from 'react'
 import { Area, CartesianGrid, Cell, ComposedChart, Legend, Line, Pie, PieChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import InputPanel from './Inputs.jsx'
-import { breakEven } from './model.js'
+import { breakEven, snowball } from './model.js'
 import { formatMoney, formatNumber } from './i18n.js'
-
-const KEYS = ['price', 'cogs', 'cpa', 'returnFee', 'deliveryRate', 'adTestCost', 'importedUnits']
+const KEYS = ['price', 'cogs', 'cpa', 'returnFee', 'deliveryRate', 'adTestCost', 'testOrders', 'importedUnits', 'gpToAds', 'reinvestEvery']
 
 const TIP = { background: 'var(--tooltip)', border: '1px solid var(--card-border)', borderRadius: 10, color: 'var(--ink)', boxShadow: 'var(--tooltip-shadow)' }
 const TICK = { fill: 'var(--muted)', fontSize: 12 }
@@ -43,7 +42,6 @@ function Chart({ gid, eyebrow, title, q, perUnit, target, units, targetLabel, wh
     </section>
   )
 }
-
 function Split({ ad, inventory, t, locale }) {
   const money = x => formatMoney(x, locale)
   const data = [{ name: t('adTest'), value: ad, color: 'var(--blue)' }, { name: t('inventory'), value: inventory, color: 'var(--cyan)' }]
@@ -60,9 +58,75 @@ function Split({ ad, inventory, t, locale }) {
   )
 }
 
+function Snowball({ s, t, locale }) {
+  const num = x => formatNumber(x, locale), money = x => formatMoney(x, locale)
+  const { hit, rounds, investment, v } = s
+  const shown = hit ? rounds : []
+  const headline = hit && t('needRounds', { rounds: num(hit.k), days: num(hit.k * v.reinvestEvery), orders: num(Math.ceil(hit.orders)) })
+  const warning = hit && hit.orders > v.importedUnits ? t('tooMany', { units: num(v.importedUnits) }) : null
+
+  const byRound = shown.map(r => ({ x: r.k, recovered: r.end, kept: r.start, target: investment }))
+  const byOrders = shown.flatMap(r => [{ x: r.total - r.orders, recovered: r.start, target: investment }, { x: r.total, recovered: r.end, target: investment }])
+  const lastOrders = shown.length ? Math.ceil(shown[shown.length - 1].total) : 0
+
+  const defs = id => (
+    <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--cyan)" stopOpacity={0.42} /><stop offset="100%" stopColor="var(--blue)" stopOpacity={0} /></linearGradient></defs>
+  )
+  const frame = (title, body) => (
+    <section className="english-chart">
+      <h2>{title}<small>{t('step2')}</small></h2>
+      {!hit ? <p className="chart-warning">{t('chartUnavailable', { why: t('whyNoGrowth') })}</p> : (
+        <>
+          <b className="q">{headline}</b>
+          {warning && <p className="chart-warning">{warning}</p>}
+          {body}
+        </>
+      )}
+    </section>
+  )
+
+  return (
+    <>
+      {frame(t('byRounds'), hit && (
+        <ResponsiveContainer width="100%" height={320}>
+          <ComposedChart data={byRound}>
+            {defs('g-rounds')}
+            <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+            <XAxis dataKey="x" type="number" domain={[0, Math.max(hit.k, 1)]} ticks={byRound.map(r => r.x)} allowDecimals={false} tick={TICK} stroke="var(--chart-grid)"
+              tickFormatter={k => (k === 0 ? t('testRound') : k)} label={{ value: t('roundsAxis', { days: num(v.reinvestEvery) }), position: 'insideBottom', offset: -3, fill: 'var(--muted)' }} />
+            <YAxis width={70} tickFormatter={num} tick={TICK} stroke="var(--chart-grid)" />
+            <Tooltip contentStyle={TIP} formatter={money} labelFormatter={k => (k === 0 ? t('testRound') : `${t('roundWord')} ${k}`)} />
+            <Legend />
+            <Area type="linear" dataKey="recovered" name={t('recoveredEnd')} stroke="var(--cyan)" strokeWidth={3} fill="url(#g-rounds)" dot={{ r: 4 }} />
+            <Line type="linear" dataKey="kept" name={t('keptCash')} stroke="var(--green)" strokeWidth={2.5} dot={{ r: 3 }} />
+            <Line type="linear" dataKey="target" name={t('fullInvestment')} stroke="var(--blue)" strokeWidth={2.5} dot={false} />
+            <ReferenceLine x={hit.k} stroke="var(--cyan)" strokeDasharray="6 4" label={{ value: t('roundBreakEven', { value: hit.k }), position: 'insideTopLeft', fill: 'var(--cyan)', fontSize: 12 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      ))}
+      {frame(t('byOrders'), hit && (
+        <ResponsiveContainer width="100%" height={320}>
+          <ComposedChart data={byOrders}>
+            {defs('g-orders')}
+            <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+            <XAxis dataKey="x" type="number" domain={[0, lastOrders]} tickFormatter={num} tick={TICK} stroke="var(--chart-grid)" label={{ value: t('deliveredOrders'), position: 'insideBottom', offset: -3, fill: 'var(--muted)' }} />
+            <YAxis width={70} tickFormatter={num} tick={TICK} stroke="var(--chart-grid)" />
+            <Tooltip contentStyle={TIP} formatter={money} labelFormatter={x => `${num(x)} ${t('deliveredOrders')}`} />
+            <Legend />
+            <Area type="linear" dataKey="recovered" name={t('moneyRecovered')} stroke="var(--cyan)" strokeWidth={3} fill="url(#g-orders)" dot={false} />
+            <Line type="linear" dataKey="target" name={t('fullInvestment')} stroke="var(--blue)" strokeWidth={2.5} dot={false} />
+            <ReferenceLine x={hit.orders} stroke="var(--cyan)" strokeDasharray="6 4" label={{ value: t('breakEven', { value: num(hit.orders) }), fill: 'var(--cyan)', fontSize: 12 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      ))}
+    </>
+  )
+}
+
 export default function BreakEven({ state, set, reset, t, locale }) {
   const money = x => formatMoney(x, locale), num = x => formatNumber(x, locale)
   const m = useMemo(() => breakEven(state), [state])
+  const s = useMemo(() => snowball(state), [state])
   return (
     <main className="english-break shell">
       <section className="english-hero">
@@ -81,7 +145,7 @@ export default function BreakEven({ state, set, reset, t, locale }) {
         <Chart gid="g1" eyebrow={t('step1')} title={t('winAd')} q={m.adQ} perUnit={m.profit} target={m.v.adTestCost} units={m.v.importedUnits} targetLabel={t('adTestCost')} why={t('whyProfit')} t={t} locale={locale} />
         <Split ad={m.v.adTestCost} inventory={m.inventoryCost} t={t} locale={locale} />
       </div>
-      <Chart gid="g2" eyebrow={t('step2')} title={t('winFull')} q={m.fullQ} perUnit={m.beforeCogs} target={m.totalInvestment} units={m.v.importedUnits} targetLabel={t('fullInvestment')} why={t('whyBeforeCogs')} t={t} locale={locale} />
+        <Snowball s={s} t={t} locale={locale} />
     </main>
   )
 }

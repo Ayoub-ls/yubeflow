@@ -10,13 +10,14 @@ export const FIELDS = {
   deliveryRate: ['Delivery rate', 'Delivered orders as a % of placed orders', 'percent'],
   adTestCost: ['Ad test full cost', 'Total ad money spent testing the product before the inventory arrived', 'cash'],
   importedUnits: ['Imported units', 'Units in the inventory you bought', 'units'],
-  cashNow: ['Inventory money saved', 'Money already set aside for stock, ready to spend today', 'cash'],
+    testOrders: ['Orders from the ad test', 'Delivered orders the test produced; their gross profit funds the first round', 'units'],
+  gpToAds: ['% of GP reinvested in ads', 'Share of each round\'s gross profit you put back into ads; the rest stays with you', 'percent'],
+  cashNow: ['Cash available now for inventory', 'Money ready to spend on the next inventory order today', 'cash'],
   reinvestEvery: ['Reinvest ads every', 'Days between reinvestments: each time, the ads share of revenue becomes the next ad budget', 'days'],
   dailyAdBudget: ['Current daily ad budget', 'What you spend on ads per day right now', 'cash'],
-  leadTime: ['Shipment lead time', 'Days from ordering to sellable stock', 'days'],
-  safetyDays: ['Safety buffer', 'Extra days of stock to cover shipping delays', 'days'],
-  coverDays: ['Days of sales to buy', 'How many days of sales you want this order to cover, after it arrives', 'days'],
+  leadTime: ['Days until the new inventory can be sold', 'Days from placing the order until the new stock is sellable', 'days'],
   currentStock: ['Current stock', 'Sellable units you have now', 'units'],
+  nextOrderUnits: ['Units in the next inventory order', 'How many units you will buy in the next order', 'units'],
 }
 
 function Slider({ id, value, onChange, t }) {

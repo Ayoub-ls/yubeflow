@@ -24,22 +24,33 @@ export default function App({ prefs, user, profile, signOut }) {
   const isAdmin = profile.role === 'admin'
   const tabs = isAdmin ? [...TABS, ADMIN_TAB] : TABS
 
+  // Load this person's saved inputs from Supabase once; they win over the local copy.old
   // Load this person's saved inputs from Supabase once; they win over the local copy.
   useEffect(() => {
-    let live = true
-    supabase.from('user_settings').select('data').eq('user_id', user.id).maybeSingle().then(({ data }) => {
-      if (!live) return
-      if (data && Object.keys(data.data || {}).length) setState({ ...DEFAULTS, ...data.data })
-      setCloudReady(true)
-    })
-    return () => { live = false }
+    let live = true, timer
+    const load = () => supabase.from('user_settings').select('data').eq('user_id', user.id).maybeSingle()
+      .then(({ data, error }) => {
+        if (!live) return
+        if (error) { timer = setTimeout(load, 8000); return } // network problem: retry, and never save before one successful load
+        if (data && Object.keys(data.data || {}).length) setState({ ...DEFAULTS, ...data.data })
+        setCloudReady(true)
+      })
+      .catch(() => { if (live) timer = setTimeout(load, 8000) })
+    load()
+    return () => { live = false; clearTimeout(timer) }
   }, [user.id])
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(state)) } catch { /* storage unavailable */ } }, [state, key])
-  // Save to Supabase shortly after the last change (only after the first load, so defaults never overwrite cloud data).
+  // Save to Supabase shortly after the last change (only after the first load, so defaults never overwrite cloud data).old
+  // Save to Supabase shortly after the last change; retry a few times if the network drops.
   useEffect(() => {
     if (!cloudReady) return
-    const id = setTimeout(() => supabase.from('user_settings').upsert({ user_id: user.id, data: state, updated_at: new Date().toISOString() }).then(() => {}), 800)
-    return () => clearTimeout(id)
+    let live = true, timer
+    const save = (attempt = 0) => supabase.from('user_settings')
+      .upsert({ user_id: user.id, data: state, updated_at: new Date().toISOString() })
+      .then(({ error }) => { if (error && live && attempt < 4) timer = setTimeout(() => save(attempt + 1), 3000 * (attempt + 1)) })
+      .catch(() => { if (live && attempt < 4) timer = setTimeout(() => save(attempt + 1), 3000 * (attempt + 1)) })
+    timer = setTimeout(() => save(), 800)
+    return () => { live = false; clearTimeout(timer) }
   }, [state, cloudReady, user.id])
   const set = (k, v) => setState(s => ({ ...s, [k]: Math.max(0, Number(v) || 0) }))
   const reset = () => setState(DEFAULTS)

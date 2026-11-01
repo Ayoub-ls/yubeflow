@@ -1,93 +1,40 @@
 import { useMemo } from 'react'
+import { Area, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import InputPanel from './Inputs.jsx'
-import SplitBar, { SOLD_KEYS } from './SplitBar.jsx'
-import { plan, soldSoFar } from './model.js'
+import { inventoryPlan, inventoryRecommendation } from './model.js'
 import { formatMoney, formatNumber } from './i18n.js'
 
-const KEYS = ['price', 'cogs', 'cpa', 'deliveryRate', 'cashNow', 'dailyAdBudget', 'reinvestEvery', 'currentStock', 'importedUnits', 'leadTime', 'safetyDays', 'coverDays']
-function Card({ title, value, note, tone = '' }) {
-  return <article className={'simple-card ' + tone}><span>{title}</span><strong>{value}</strong><small>{note}</small></article>
+const KEYS = ['price', 'cogs', 'cpa', 'returnFee', 'deliveryRate', 'gpToAds', 'reinvestEvery', 'dailyAdBudget', 'currentStock', 'cashNow', 'nextOrderUnits', 'leadTime']
+const TIP = { background: 'var(--tooltip)', border: '1px solid var(--card-border)', borderRadius: 10, color: 'var(--ink)', boxShadow: 'var(--tooltip-shadow)' }
+const TICK = { fill: 'var(--muted)', fontSize: 12 }
+function Card({ title, value, note, tone = '' }) { return <article className={'simple-card ' + tone}><span>{title}</span><strong>{value}</strong><small>{note}</small></article> }
+
+function CashChart({ m, t, locale }) {
+  const money = x => formatMoney(x, locale), num = x => formatNumber(x, locale)
+  return <section className="english-chart"><h2>{t('cashChartTitle')}<small>{t('cashChartSubtitle')}</small></h2><ResponsiveContainer width="100%" height={320}><ComposedChart data={m.chart}>
+    <defs><linearGradient id="inventory-cash" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--cyan)" stopOpacity={0.42} /><stop offset="55%" stopColor="var(--blue)" stopOpacity={0.16} /><stop offset="100%" stopColor="var(--blue)" stopOpacity={0} /></linearGradient><filter id="inventory-cash-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter></defs>
+    <CartesianGrid stroke="var(--chart-grid)" vertical={false} /><XAxis dataKey="day" tick={TICK} stroke="var(--chart-grid)" label={{ value: t('days'), position: 'insideBottom', offset: -3, fill: 'var(--muted)' }} /><YAxis width={70} tickFormatter={num} tick={TICK} stroke="var(--chart-grid)" /><Tooltip contentStyle={TIP} formatter={money} labelFormatter={day => t('dayNumber', { value: num(day) })} /><Legend />
+    <Area type="monotone" dataKey="cash" name={t('freeCash')} stroke="var(--cyan)" strokeWidth={3} fill="url(#inventory-cash)" filter="url(#inventory-cash-glow)" dot={false} /><Line type="linear" dataKey="cost" name={t('cashNeeded')} stroke="var(--blue)" strokeWidth={2.5} dot={false} />
+    {m.tOut !== null && <ReferenceLine x={m.tOut} stroke="var(--red)" strokeDasharray="6 4" label={{ value: t('stockRunsOut'), fill: 'var(--red)', fontSize: 12 }} />}{m.latestOrderDay !== null && m.latestOrderDay >= 0 && <ReferenceLine x={m.latestOrderDay} stroke="var(--cyan)" strokeDasharray="6 4" label={{ value: t('latestOrder'), fill: 'var(--cyan)', fontSize: 12 }} />}
+  </ComposedChart></ResponsiveContainer></section>
 }
 
 export default function Planner({ state, set, reset, t, locale }) {
   const money = x => formatMoney(x, locale), num = x => formatNumber(x, locale)
-  const m = useMemo(() => plan(state), [state])
-  const sold = useMemo(() => soldSoFar(state), [state])
-  const ok = m.valid
-  const orderBy = !ok ? t('unavailable') : m.orderInDays <= 0 ? t('now') : t('inDays', { value: num(Math.floor(m.orderInDays)) })
-  const status = !ok ? '' : m.tone === 'safe' ? t('statusSafe') : m.tone === 'danger' ? t('statusLate') : m.orderInDays <= 0 ? t('statusWarn') : t('statusSoon', { value: num(Math.ceil(m.orderInDays)) })
-  const stockShare = ok ? Math.min(100, (m.v.currentStock / Math.max(m.unitsNeeded, 1)) * 100) : 0
-  return (
-    <main className="simple-planner shell">
-      <section className="english-hero">
-        <div>
-          <h1>{t('plannerTitle')}</h1><p>{t('plannerDesc')}</p>
-        </div>
-        {ok && <div className={'english-status ' + m.tone}>{status}</div>}
-      </section>
-      <InputPanel title={t('planningInputs')} keys={KEYS} state={state} set={set} reset={reset} t={t} />
-      <p className="assumption">{t('assumption')}</p>
-      {sold && (
-        <>
-          <SplitBar s={sold.s} set={set} reset={() => set('soldCustom', 0)} keys={SOLD_KEYS} title={t('soldSplit')} intro={t('soldIntro')} t={t} locale={locale} />
-          <section className="result-section">
-            <div className="section-title"><h2>{t('soldTitle')}</h2></div>
-            <div className="simple-grid">
-              <Card title={t('unitsSold')} value={num(sold.units)} note={`${num(sold.v.importedUnits)} − ${num(sold.v.currentStock)}`} />
-              <Card title={t('revenue')} value={money(sold.revenue)} note={t('afterFees')} />
-              <Card title={t('reinvestedAds')} value={money(sold.ads)} note={`${sold.s.ads.toFixed(0)}%`} />
-              <Card title={t('savedInventory')} value={money(sold.inventory)} note={t('buyAbout', { value: num(sold.buyable) })} />
-              <Card title={t('netProfit')} value={money(sold.net)} note={`${sold.s.net.toFixed(0)}%`} tone="good" />
-            </div>
-          </section>
-        </>
-      )}
-      {!ok ? <p className="empty-note">{t('forecastEmpty')}</p> : (
-        <>
-          <SplitBar s={m.s} set={set} reset={() => set('splitCustom', 0)}
-            title={t('nextRevenue', { days: num(m.v.reinvestEvery) })} t={t} locale={locale} />
-          <section className="result-section">
-            <div className="section-title"><h2>{t('nextDays', { days: num(m.v.reinvestEvery) })}</h2></div>
-            <div className="simple-grid">
-              <Card title={t('adBudget')} value={money(m.nextBudget)} note={t('todayAfter', { value: money(m.v.dailyAdBudget) })} tone={m.s.custom ? 'featured' : ''} />
-              <Card title={t('reinvestedAds')} value={money(m.cycle.ads)} note={`${m.s.ads.toFixed(0)}%`} />
-              <Card title={t('savedInventory')} value={money(m.cycle.inventory)} note={t('buyAbout', { value: num(m.cycle.buyable) })} />
-              <Card title={t('netProfit')} value={money(m.cycle.net)} note={`${m.s.net.toFixed(0)}%`} tone="good" />
-            </div>
-          </section>
-          <section className="result-section">
-            <div className="section-title"><h2>{t('whenOrder')}</h2></div>
-            <div className="simple-grid">
-              <Card title={t('dailySales')} value={`${m.daily.toFixed(1)} ${t('units')}`} note={`CAC: ${money(m.cac)}`} />
-              <Card title={t('stockLeft')} value={`${m.stockDays.toFixed(1)} ${t('days')}`} note={t('currentStock')} tone={m.tone === 'danger' ? 'danger' : ''} />
-              <Card title={t('placeOrder')} value={orderBy} note={t('stockMustLast', { value: num(m.v.leadTime + m.v.safetyDays) })} tone="featured" />
-            </div>
-          </section>
-          <section className="result-section">
-            <div className="section-title"><h2>{t('howMuch')}</h2></div>
-            <div className="simple-grid">
-              <Card title={t('recommended')} value={`${num(m.qty)} ${t('units')}`} note={t('covers', { value: num(m.v.coverDays) })} tone="featured" />
-              <Card title={t('orderCost')} value={money(m.cost)} note={t('unitsCogs')} />
-              <Card title={t('savedAfter')} value={money(m.leftover)} note={t('affordable', { value: num(m.affordable) })} />
-              <Card title={t('shortfall')} value={money(m.shortfall)} note={t('costMinusSaved')} tone={m.shortfall > 0 ? 'danger' : 'good'} />
-            </div>
-          </section>
-          <section className="coverage">
-            <div className="section-title"><h2>{t('stockNeed')}</h2></div>
-            <div className="coverage-bar"><i className="stock" style={{ width: stockShare + '%' }} /><i className="need" style={{ width: 100 - stockShare + '%' }} /></div>
-            <div className="coverage-key">
-              <span><i className="stock" />{t('currentStockLabel', { value: num(m.v.currentStock) })}</span>
-              <span><i className="need" />{t('needed', { value: num(m.unitsNeeded) })}</span>
-            </div>
-          </section>
-          <section className={'english-recommendation ' + m.tone}>
-            
-            <h2>{status}</h2>
-            <p>{t('recommendation', { daily: m.daily.toFixed(1), stock: num(m.stockDays), qty: num(m.qty), cost: money(m.cost) })} {' '}{m.shortfall > 0 ? t('shortMessage', { value: money(m.shortfall) }) : t('covered')}</p>
-            <small>{t('estimate')}</small>
-          </section>
-        </>
-      )}
-    </main>
-  )
+  const m = useMemo(() => inventoryPlan(state), [state])
+  const recommendation = useMemo(() => inventoryRecommendation(state), [state])
+  if (!m.valid) return <main className="simple-planner shell"><section className="english-hero"><div><h1>{t('plannerTitle')}</h1><p>{t('plannerDesc')}</p></div></section><InputPanel title={t('planningInputs')} keys={KEYS} state={state} set={set} reset={reset} t={t} /><p className="empty-note">{t('inventoryEmpty')}</p></main>
+  const stockOut = m.tOut === null ? t('stockMoreYear', { fading: m.r < 1 ? t('salesFading') : t('salesContinue') }) : `${num(m.tOut)} ${t('days')}`
+  const cashDays = m.tCash === null ? t('unavailable') : `${num(m.tCash)} ${t('days')}`
+  const latest = m.latestOrderDay === null ? t('unavailable') : m.latestOrderDay < 0 ? t('alreadyPassed') : t('dayNumber', { value: num(m.latestOrderDay) })
+  const gap = m.lateDays === Infinity ? t('unavailable') : `${num(m.lateDays)} ${t('days')}`
+  const status = m.possible ? t('inTime') : m.tCash === null ? t('cannotFund') : m.latestOrderDay < 0 ? t('cannotArrive') : t('lateShipment')
+  return <main className="simple-planner shell">
+    <section className="english-hero"><div><h1>{t('plannerTitle')}</h1><p>{t('plannerDesc')}</p></div></section><InputPanel title={t('planningInputs')} keys={KEYS} state={state} set={set} reset={reset} t={t} />
+    <section className="result-section"><div className="section-title"><h2>{t('stockQuestion')}</h2></div><div className="simple-grid"><Card title={t('daysUntilStockOut')} value={stockOut} note={m.tOut === null ? t('stockForecastNote') : t('inRound', { value: num(m.roundAtOut + 1) })} tone={m.tOut === null ? 'featured' : ''} /><Card title={t('salesPerDay')} value={`${num(m.u0)} → ${m.tOut === null ? t('unavailable') : num(m.lastRoundRate)} ${t('units')}`} note={t('salesNowToLast')} /></div></section>
+    <section className="result-section"><div className="section-title"><h2>{t('cashQuestion')}</h2></div><div className="simple-grid"><Card title={t('cashNeeded')} value={money(m.cost)} note={t('unitsTimesCogs', { units: num(m.v.nextOrderUnits) })} /><Card title={t('ordersNeeded')} value={num(m.ordersNeeded)} note={t('deliveredOrders')} /><Card title={t('daysToCash')} value={cashDays} note={m.tCash === null ? t('maxCashNote', { value: money(m.maxCash) }) : t('cashTargetNote')} tone={m.tCash === null ? 'danger' : ''} /></div>{m.tCash === null && <p className="chart-warning">{t('moreThanStock', { stock: num(m.v.currentStock), missing: money(m.missing) })}</p>}</section>
+    <section className="result-section"><div className="section-title"><h2>{t('timingQuestion')}</h2></div><div className={'english-status ' + (m.possible ? 'safe' : 'danger')}>{status}</div><div className="simple-grid"><Card title={t('latestOrderDay')} value={latest} note={m.latestOrderDay !== null && m.latestOrderDay < 0 ? t('leadTimeTooLong') : t('toArriveInTime')} tone="featured" /><Card title={t('cashByThen')} value={money(m.cashAtD)} note={t('freeCash')} /><Card title={t('cashMissing')} value={money(m.missingCash)} note={t('cashNeeded')} tone={m.missingCash > 0 ? 'danger' : 'good'} /><Card title={t('daysWithoutStock')} value={gap} note={t('ifOrderWhenFunded')} tone={m.lateDays > 0 ? 'danger' : 'good'} /></div></section>
+    <section className="result-section"><div className="section-title"><h2>{t('reinvestmentQuestion')}</h2></div><div className="simple-grid"><Card title={t('recommendedReinvestment')} value={`${num(recommendation.recommended.x)}%`} note={recommendation.noneWorks ? t('noneWorks') : t('highestWorks')} tone="featured" /><Card title={t('feasibleRange')} value={recommendation.feasibleRange ? `${num(recommendation.feasibleRange[0])}% – ${num(recommendation.feasibleRange[1])}%` : t('none')} note={t('reinvestmentRangeNote')} /><Card title={t('useRecommendation')} value={<button className="mini-btn" onClick={() => set('gpToAds', recommendation.recommended.x)}>{t('useThisPercent')}</button>} note={t('updatesAdsInput')} /></div>{recommendation.shrinking && <p className="chart-warning">{t('salesShrinking')}</p>}{recommendation.noneWorks && <p className="chart-warning">{t('noneWorksGap', { value: money(recommendation.recommended.missingCash) })}</p>}</section>
+    <CashChart m={m} t={t} locale={locale} />
+  </main>
 }

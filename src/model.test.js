@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { DEFAULTS, breakEven, plan, soldSoFar } from './model.js'
+import { DEFAULTS, breakEven, inventoryPlan, inventoryRecommendation, snowball } from './model.js'
 import { dictionaries } from './i18n.js'
 
 test('full break-even does not deduct COGS twice', () => {
@@ -15,37 +15,40 @@ test('unprofitable units give no break-even', () => {
   assert.equal(breakEven({ ...DEFAULTS, cogs: 5000 }).adQ, null)
   assert.equal(breakEven({ ...DEFAULTS, deliveryRate: 0 }).fullQ, null)
 })
-test('reorder quantity covers lead time, safety and cover days', () => {
-  const p = plan({ ...DEFAULTS, deliveryRate: 100, cpa: 500, dailyAdBudget: 5000, leadTime: 20, safetyDays: 5, coverDays: 30, currentStock: 100, cogs: 1000, cashNow: 0 })
-  assert.equal(p.daily, 10)
-  assert.equal(p.qty, 10 * 55 - 100)
-  assert.equal(p.shortfall, p.cost)
-})
-test('stock exactly equal to lead time is not "safe"', () => {
-  const p = plan({ ...DEFAULTS, deliveryRate: 100, cpa: 500, dailyAdBudget: 5000, leadTime: 20, safetyDays: 5, currentStock: 200 })
-  assert.equal(p.tone, 'warn')
-})
+const inventoryExample = { ...DEFAULTS, price: 3000, cogs: 1000, cpa: 250, deliveryRate: 50, returnFee: 0, dailyAdBudget: 1000, currentStock: 80, cashNow: 5000, nextOrderUnits: 40, leadTime: 20, reinvestEvery: 7 }
+const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 0.02, `${actual} is not close to ${expected}`)
 
-test('default split is inventory = COGS and ads = CAC, summing to 100%', () => {
-  const s = plan({ ...DEFAULTS }).s
-  const base = 2500 - (0.35 / 0.65) * 300
-  assert.ok(Math.abs(s.inv - (1100 / base) * 100) < 1e-9)
-  assert.ok(Math.abs(s.ads - ((550 / 0.65) / base) * 100) < 1e-9)
-  assert.ok(Math.abs(s.inv + s.ads + s.net - 100) < 1e-9)
+test('inventory plan calculates the 75% scenario continuously', () => {
+  const p = inventoryPlan({ ...inventoryExample, gpToAds: 75 })
+  assert.equal(p.valid, true)
+  close(p.tOut, 15.333)
+  close(p.ordersNeeded, 23.333)
+  close(p.tCash, 8.556)
+  close(p.latestOrderDay, -4.667)
+  assert.equal(p.missingCash, 35000)
+  close(p.lateDays, 13.222)
+  assert.equal(p.possible, false)
 })
-test('default split keeps the ad budget flat; a bigger ads share grows it', () => {
-  assert.equal(plan({ ...DEFAULTS }).nextBudget, DEFAULTS.dailyAdBudget)
-  const p = plan({ ...DEFAULTS, splitCustom: 1, invShare: 30, adsShare: 60 })
-  assert.ok(p.nextBudget > DEFAULTS.dailyAdBudget)
+test('inventory plan finds the 25% scenario feasible', () => {
+  const p = inventoryPlan({ ...inventoryExample, gpToAds: 25 })
+  assert.equal(p.tOut, 40)
+  assert.equal(p.ordersNeeded, 14)
+  assert.equal(p.tCash, 7)
+  assert.equal(p.latestOrderDay, 20)
+  assert.equal(p.cashAtD, 105000)
+  assert.equal(p.missingCash, 0)
+  assert.equal(p.lateDays, 0)
+  assert.equal(p.possible, true)
 })
-
-test('sold so far splits the revenue of imported minus current stock', () => {
-  const m = soldSoFar({ ...DEFAULTS, price: 5000, cogs: 2500, cpa: 1000, deliveryRate: 50, returnFee: 0, importedUnits: 100, currentStock: 60 })
-  assert.equal(m.units, 40)
-  assert.equal(m.revenue, 200000)
-  assert.equal(m.inventory, 100000)
-  assert.equal(m.ads, 80000)
-  assert.equal(m.net, 20000)
+test('inventory recommendation chooses the highest feasible reinvestment rate', () => {
+  const r = inventoryRecommendation(inventoryExample)
+  assert.equal(r.recommended.x, 31)
+  assert.deepEqual(r.feasibleRange, [0, 31])
+})
+test('inventory plan handles funded orders and invalid delivery rates', () => {
+  assert.equal(inventoryPlan({ ...inventoryExample, cashNow: 50000 }).ordersNeeded, 0)
+  const p = inventoryPlan({ ...inventoryExample, deliveryRate: 0 })
+  assert.equal(p.valid, false)
 })
 
 test('French and Arabic dictionaries fully translate the English interface keys', () => {
@@ -55,4 +58,18 @@ test('French and Arabic dictionaries fully translate the English interface keys'
       assert.notDeepEqual(dictionaries[locale][key], english, `${locale} still uses English for ${key}`)
     }
   }
+})
+
+test('snowball: 100% of GP reinvested gives 20 orders in 1 round', () => {
+  const r = snowball({ ...DEFAULTS, price: 3000, cogs: 1000, cpa: 250, deliveryRate: 50, returnFee: 0, adTestCost: 2000, importedUnits: 30, testOrders: 4, gpToAds: 100 })
+  assert.equal(r.investment, 32000)
+  assert.equal(r.hit.k, 1)
+  assert.equal(r.hit.orders, 20)
+})
+test('snowball: 75% needs 2 rounds and 28 orders; 0% never breaks even', () => {
+  const base = { ...DEFAULTS, price: 3000, cogs: 1000, cpa: 250, deliveryRate: 50, returnFee: 0, adTestCost: 2000, importedUnits: 30, testOrders: 4 }
+  const r = snowball({ ...base, gpToAds: 75 })
+  assert.equal(r.hit.k, 2)
+  assert.ok(Math.abs(r.hit.orders - 28) < 1e-9)
+  assert.equal(snowball({ ...base, gpToAds: 0 }).hit, null)
 })
