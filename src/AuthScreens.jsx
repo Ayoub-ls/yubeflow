@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { useAuth } from './auth.jsx'
 import { LANGUAGES, translator } from './i18n.js'
+import ThemeSelect from './ThemeSelect.jsx'
+import { themeClass } from './prefs.js'
 
 function Shell({ prefs, children }) {
   const { theme, setTheme, locale, setLocale } = prefs
   const t = translator(locale)
   return (
-    <div className={'auth-page theme-' + theme + (locale === 'ar' ? ' rtl' : '')}>
+    <div className={'auth-page ' + themeClass(theme) + (locale === 'ar' ? ' rtl' : '')}>
       <div className="auth-top">
-        <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? t('light') : t('dark')}</button>
+        <ThemeSelect theme={theme} setTheme={setTheme} t={t} />
         <label className="language-select"><span className="sr-only">{t('language')}</span>
           <select value={locale} onChange={e => setLocale(e.target.value)} aria-label={t('language')}>
             {LANGUAGES.map(({ code, label, name }) => <option key={code} value={code}>{label} · {name}</option>)}

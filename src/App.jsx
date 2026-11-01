@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import ThemeSelect from './ThemeSelect.jsx'
+import { themeClass } from './prefs.js'
 import BreakEven from './BreakEven.jsx'
 import Planner from './Planner.jsx'
 import Admin from './Admin.jsx'
@@ -57,7 +59,7 @@ export default function App({ prefs, user, profile, signOut }) {
   const t = translator(locale)
   const props = { state, set, reset, t, locale }
   return (
-    <div className={'app theme-' + theme + (locale === 'ar' ? ' rtl' : '')}>
+    <div className={'app ' + themeClass(theme) + (locale === 'ar' ? ' rtl' : '')}>
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">Y</span><span>Yube <b>Flow</b></span></div>
         <nav>
@@ -74,9 +76,7 @@ export default function App({ prefs, user, profile, signOut }) {
         <div className="topbar">
           <div className="search"><span>⌁</span> {t('topNote')}</div>
           <div className="top-actions">
-            <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? t('light') : t('dark')}>
-              {theme === 'dark' ? t('light') : t('dark')}
-            </button>
+            <ThemeSelect theme={theme} setTheme={setTheme} t={t} />
             <label className="language-select"><span className="sr-only">{t('language')}</span><select value={locale} onChange={e => setLocale(e.target.value)} aria-label={t('language')}>{LANGUAGES.map(({ code, label, name }) => <option key={code} value={code}>{label} · {name}</option>)}</select></label>
             <span className="user-chip" title={profile.email}>{profile.business_name || profile.full_name || profile.email}</span>
             <button className="theme-toggle" onClick={signOut}>{t('signOut')}</button>
