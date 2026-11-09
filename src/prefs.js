@@ -17,7 +17,7 @@ export function usePrefs() {
   useEffect(() => {
     write('yube-locale', locale)
     document.documentElement.lang = locale
-    document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr'
+        document.documentElement.dir = 'ltr' // the layout stays left-to-right in every language; Arabic text direction is handled in CSS (.ar-text)
   }, [locale])
   return { theme, setTheme, locale, setLocale }
 }

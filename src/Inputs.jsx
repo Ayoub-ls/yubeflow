@@ -14,7 +14,6 @@ export const FIELDS = {
   gpToAds: ['% of GP reinvested in ads', 'Share of each round\'s gross profit you put back into ads; the rest stays with you', 'percent'],
   cashNow: ['Cash available now for inventory', 'Money ready to spend on the next inventory order today', 'cash'],
   reinvestEvery: ['Reinvest ads every', 'Days between reinvestments: each time, the ads share of revenue becomes the next ad budget', 'days'],
-  dailyAdBudget: ['Current daily ad budget', 'What you spend on ads per day right now', 'cash'],
   leadTime: ['Days until the new inventory can be sold', 'Days from placing the order until the new stock is sellable', 'days'],
   currentStock: ['Current stock', 'Sellable units you have now', 'units'],
   nextOrderUnits: ['Units in the next inventory order', 'How many units you will buy in the next order', 'units'],

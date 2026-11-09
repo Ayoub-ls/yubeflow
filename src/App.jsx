@@ -59,7 +59,7 @@ export default function App({ prefs, user, profile, signOut }) {
   const t = translator(locale)
   const props = { state, set, reset, t, locale }
   return (
-    <div className={'app ' + themeClass(theme) + (locale === 'ar' ? ' rtl' : '')}>
+    <div className={'app theme-' + theme + (locale === 'ar' ? ' ar-text' : '')}>
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">Y</span><span>Yube <b>Flow</b></span></div>
         <nav>

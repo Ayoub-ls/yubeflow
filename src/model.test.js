@@ -15,40 +15,47 @@ test('unprofitable units give no break-even', () => {
   assert.equal(breakEven({ ...DEFAULTS, cogs: 5000 }).adQ, null)
   assert.equal(breakEven({ ...DEFAULTS, deliveryRate: 0 }).fullQ, null)
 })
-const inventoryExample = { ...DEFAULTS, price: 3000, cogs: 1000, cpa: 250, deliveryRate: 50, returnFee: 0, dailyAdBudget: 1000, currentStock: 80, cashNow: 5000, nextOrderUnits: 40, leadTime: 20, reinvestEvery: 7 }
-const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 0.02, `${actual} is not close to ${expected}`)
+const inventoryExample = { ...DEFAULTS, price: 3000, cogs: 1000, cpa: 250, deliveryRate: 50, returnFee: 0, testOrders: 4, currentStock: 80, cashNow: 5000, nextOrderUnits: 40, leadTime: 20, reinvestEvery: 7 }
+const close = (actual, expected, tolerance = 0.02) => assert.ok(Math.abs(actual - expected) < tolerance, `${actual} is not close to ${expected}`)
 
+test('ad budget after the test = X% x GP x orders from the ad test, spread over one round', () => {
+  const p = inventoryPlan({ ...inventoryExample, gpToAds: 75 })
+  assert.equal(p.adBudgetAfterTest, 0.75 * 2000 * 4) // 6000
+  close(p.dailyAdBudget, 6000 / 7)
+  close(p.u0, 6000 / 7 / 500) // delivered units per day at CAC 500
+})
 test('inventory plan calculates the 75% scenario continuously', () => {
   const p = inventoryPlan({ ...inventoryExample, gpToAds: 75 })
   assert.equal(p.valid, true)
-  close(p.tOut, 15.333)
+  close(p.tOut, 16.074)
   close(p.ordersNeeded, 23.333)
-  close(p.tCash, 8.556)
-  close(p.latestOrderDay, -4.667)
+  close(p.tCash, 9.204)
+  close(p.latestOrderDay, -3.926)
   assert.equal(p.missingCash, 35000)
-  close(p.lateDays, 13.222)
+  close(p.lateDays, 13.13)
   assert.equal(p.possible, false)
 })
 test('inventory plan finds the 25% scenario feasible', () => {
   const p = inventoryPlan({ ...inventoryExample, gpToAds: 25 })
-  assert.equal(p.tOut, 40)
-  assert.equal(p.ordersNeeded, 14)
-  assert.equal(p.tCash, 7)
-  assert.equal(p.latestOrderDay, 20)
-  assert.equal(p.cashAtD, 105000)
+  close(p.tOut, 140)
+  close(p.ordersNeeded, 14)
+  close(p.tCash, 24.5)
+  close(p.latestOrderDay, 120)
+  close(p.cashAtD, 176428.57, 1)
   assert.equal(p.missingCash, 0)
   assert.equal(p.lateDays, 0)
   assert.equal(p.possible, true)
 })
 test('inventory recommendation chooses the highest feasible reinvestment rate', () => {
   const r = inventoryRecommendation(inventoryExample)
-  assert.equal(r.recommended.x, 31)
-  assert.deepEqual(r.feasibleRange, [0, 31])
+  assert.equal(r.recommended.x, 38)
+  assert.deepEqual(r.feasibleRange, [20, 38])
 })
-test('inventory plan handles funded orders and invalid delivery rates', () => {
+test('inventory plan handles funded orders and invalid inputs', () => {
   assert.equal(inventoryPlan({ ...inventoryExample, cashNow: 50000 }).ordersNeeded, 0)
-  const p = inventoryPlan({ ...inventoryExample, deliveryRate: 0 })
-  assert.equal(p.valid, false)
+  assert.equal(inventoryPlan({ ...inventoryExample, deliveryRate: 0 }).valid, false)
+  assert.equal(inventoryPlan({ ...inventoryExample, testOrders: 0 }).valid, false) // no test orders = no budget
+  assert.equal(inventoryPlan({ ...inventoryExample, gpToAds: 0 }).valid, false) // 0% reinvested = no budget
 })
 
 test('French and Arabic dictionaries fully translate the English interface keys', () => {

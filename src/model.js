@@ -2,7 +2,7 @@
 export const DEFAULTS = {
   price: 2500, cogs: 1100, cpa: 550, returnFee: 300, deliveryRate: 65,
   adTestCost: 44000, importedUnits: 120,
-  cashNow: 150000, dailyAdBudget: 4500, leadTime: 20, currentStock: 70, nextOrderUnits: 40,
+  cashNow: 150000,   cashNow: 150000, leadTime: 20, currentStock: 70, nextOrderUnits: 40, leadTime: 20, currentStock: 70, nextOrderUnits: 40,
   reinvestEvery: 7,
   testOrders: 4, gpToAds: 100,
 }
@@ -45,11 +45,14 @@ export function inventoryPlan(raw, xOverride) {
   const g = v.price - (returnCost ?? 0) - v.cogs
   const R = v.reinvestEvery
   const H = 365
-  if (!(g > 0) || !(cac > 0) || !(v.dailyAdBudget > 0) || !(v.deliveryRate > 0) || !(R > 0)) {
+  // Ad budget after the test = X% of the gross profit of the test orders. It is spent over the first round of R days.
+  const adBudgetAfterTest = x * g * v.testOrders
+  if (!(g > 0) || !(cac > 0) || !(adBudgetAfterTest > 0) || !(v.deliveryRate > 0) || !(R > 0)) {
     return { v, valid: false, cac, g }
   }
 
-  const u0 = v.dailyAdBudget / cac
+  const dailyAdBudget = adBudgetAfterTest / R
+  const u0 = dailyAdBudget / cac
   const r = (x * g) / cac
   const f = v.cogs + (1 - x) * g
   const cost = v.nextOrderUnits * v.cogs
@@ -87,7 +90,7 @@ export function inventoryPlan(raw, xOverride) {
   const lastRoundRate = tOut === null ? null : rateAt(Math.max(tOut, 1))
   const chart = Array.from({ length: H + 1 }, (_, day) => ({ day, cash: cashAt(day), cost }))
 
-  return { v, valid: true, x: x * 100, cac, returnCost, g, r, f, u0, cost, ordersNeeded, tOut, tCash,
+  return { v, valid: true, x: x * 100, cac, returnCost, g, r, f, u0,adBudgetAfterTest, dailyAdBudget, cost, ordersNeeded, tOut, tCash,
     maxCash, missing, arrival: tCash === null ? Infinity : tCash + v.leadTime, lateDays, latestOrderDay,
     cashAtD, missingCash, possible, roundAtOut, lastRoundRate, chart }
 }

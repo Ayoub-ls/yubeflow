@@ -219,3 +219,16 @@ main{padding-top:34px;gap:18px}.english-hero h1{font-size:clamp(27px,3vw,36px);f
 :is(.theme-vault,.theme-clay) .badge i{background:var(--cyan);box-shadow:none}
 :is(.theme-vault,.theme-clay) .mini-btn.danger{color:var(--red)}
 :is(.theme-vault,.theme-clay) :is(.section-title::before,.coverage-bar .stock){box-shadow:none}
+
+/* ===== Arabic: the layout stays left-to-right; only the text itself runs right-to-left ===== */
+.ar-text :is(h1,h2,h3,p,small,label,li,th,td,.simple-card,.english-kpis>div,.english-status,.english-recommendation,.chart-warning,.auth-msg,.empty-note,.assumption,.q,.side-note){direction:rtl;text-align:start}
+/* numbers, money and units keep their normal order, but line up with the Arabic text next to them */
+.ar-text :is(.simple-card,.english-kpis>div,.english-recommendation) :is(strong,b,code){direction:ltr;unicode-bidi:isolate;text-align:right}
+/* Arabic letters join, so the colored first letter of the title would break the word; and the title block uses the full width */
+.ar-text .english-hero h1::first-letter{color:inherit}
+.ar-text .english-hero>div:first-child{flex:1}
+/* Section headings: the accent bar sits on the text's right side, and the heading lines up with the Arabic text below it */
+.ar-text .section-title{justify-content:flex-end}
+.ar-text .section-title::before{order:2}
+/* "Forgot password" link lines up with the Arabic text */
+.ar-text .auth-card .link-btn{align-self:flex-end}

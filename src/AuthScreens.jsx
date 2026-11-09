@@ -8,7 +8,7 @@ function Shell({ prefs, children }) {
   const { theme, setTheme, locale, setLocale } = prefs
   const t = translator(locale)
   return (
-    <div className={'auth-page ' + themeClass(theme) + (locale === 'ar' ? ' rtl' : '')}>
+    <div className={'auth-page theme-' + theme + (locale === 'ar' ? ' ar-text' : '')}>
       <div className="auth-top">
         <ThemeSelect theme={theme} setTheme={setTheme} t={t} />
         <label className="language-select"><span className="sr-only">{t('language')}</span>
