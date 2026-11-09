@@ -1,10 +1,10 @@
 // Pure calculation module: no React, easy to test.
 export const DEFAULTS = {
-  price: 2500, cogs: 1100, cpa: 550, returnFee: 300, deliveryRate: 65,
+  price: 2500, cogs: 1100, cpa: 550, returnFee: 300, confirmationRate: 100, deliveryRate: 65,
   adTestCost: 44000, importedUnits: 120,
   cashNow: 150000,   cashNow: 150000, leadTime: 20, currentStock: 70, nextOrderUnits: 40, leadTime: 20, currentStock: 70, nextOrderUnits: 40,
   reinvestEvery: 7,
-  testOrders: 4, gpToAds: 100,
+  testOrders: 4, gpToAds: 100, cacRise: 10,
 }
 
 const clean = raw => Object.fromEntries(Object.entries(raw).map(([k, x]) => [k, Math.max(0, Number(x) || 0)]))
@@ -13,11 +13,13 @@ const fmt = x => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).fo
 export const num = fmt
 export const money = x => fmt(x) + ' DA'
 
-// Shared unit economics. Every delivered order also "pays" for the failed orders
-// around it (return fees) and for the ads that produced it (CAC = CPA / delivery rate).
+// Shared unit economics. Every delivered order also "pays" for the ads that produced it and for the failed parcels around it.
+//  - CAC = CPA / (confirmation rate x delivery rate): the ad money of ALL placed orders is spread over the ones that arrive.
+//  - The return cost uses the delivery rate alone: only confirmed orders are shipped, so only they can come back.
 export function unitEconomics(v) {
+  const c = v.confirmationRate === undefined ? 1 : Math.min(v.confirmationRate, 100) / 100 // missing = 100% (old saved data)
   const d = Math.min(v.deliveryRate, 100) / 100
-  const cac = div(v.cpa, d)
+  const cac = div(v.cpa, c * d)
   if (cac === null) return { cac: null, returnCost: null, beforeCogs: null, profit: null }
   const returnCost = ((1 - d) / d) * v.returnFee
   const beforeCogs = v.price - returnCost - cac // what one delivered unit brings in, COGS not yet deducted
@@ -38,7 +40,8 @@ export function breakEven(raw) {
 
 // Inventory and cash forecast. Sales are continuous within each daily rate, while
 // ad reinvestment happens in discrete rounds of `reinvestEvery` days.
-export function inventoryPlan(raw, xOverride) {
+// `rise` = % by which CAC grows in every reinvestment round (0 = flat CAC, as in the normal tabs).
+export function inventoryPlan(raw, xOverride, rise = 0) {
   const v = clean(raw)
   const { cac, returnCost } = unitEconomics(v)
   const x = Math.min(100, Math.max(0, xOverride ?? v.gpToAds)) / 100
@@ -57,7 +60,12 @@ export function inventoryPlan(raw, xOverride) {
   const f = v.cogs + (1 - x) * g
   const cost = v.nextOrderUnits * v.cogs
   const ordersNeeded = Math.max(0, (cost - v.cashNow) / f)
-  const rateAt = day => u0 * (r ** Math.floor((Math.max(day, 1) - 1) / R))
+  const grow = 1 + Math.max(0, rise) / 100
+  // Round k sells u0 * r^k / grow^(1+2+...+k): every round the budget buys fewer orders because CAC is higher.
+  const rateAt = day => {
+    const k = Math.floor((Math.max(day, 1) - 1) / R)
+    return u0 * (r ** k) / (grow ** ((k * (k + 1)) / 2))
+  }
   const uncappedSalesAt = time => {
     if (time <= 0) return 0
     let total = 0
@@ -88,15 +96,17 @@ export function inventoryPlan(raw, xOverride) {
   const possible = lateDays === 0
   const roundAtOut = tOut === null ? null : Math.floor(Math.max(tOut - 1e-9, 0) / R)
   const lastRoundRate = tOut === null ? null : rateAt(Math.max(tOut, 1))
+  const fading = rateAt(H) < u0 * (1 - 1e-9) // sales per day are lower a year from now than today
+  const cacAtOut = roundAtOut === null ? null : cac * grow ** roundAtOut // CAC in the round when stock runs out
   const chart = Array.from({ length: H + 1 }, (_, day) => ({ day, cash: cashAt(day), cost }))
 
-  return { v, valid: true, x: x * 100, cac, returnCost, g, r, f, u0,adBudgetAfterTest, dailyAdBudget, cost, ordersNeeded, tOut, tCash,
+  return { v, valid: true, x: x * 100, cac, returnCost, g, r, f, grow, fading, cacAtOut,u0,adBudgetAfterTest, dailyAdBudget, cost, ordersNeeded, tOut, tCash,
     maxCash, missing, arrival: tCash === null ? Infinity : tCash + v.leadTime, lateDays, latestOrderDay,
     cashAtD, missingCash, possible, roundAtOut, lastRoundRate, chart }
 }
 
-export function inventoryRecommendation(raw) {
-  const runs = Array.from({ length: 101 }, (_, x) => inventoryPlan(raw, x))
+export function inventoryRecommendation(raw, rise = 0) {
+  const runs = Array.from({ length: 101 }, (_, x) => inventoryPlan(raw, x, rise))
   const valid = runs.filter(run => run.valid)
   if (!valid.length) return { valid: false, runs }
   const feasible = valid.filter(run => run.possible)
@@ -105,22 +115,29 @@ export function inventoryRecommendation(raw) {
     : valid.reduce((a, b) => b.lateDays < a.lateDays || (b.lateDays === a.lateDays && b.missingCash < a.missingCash) ? b : a)
   return { valid: true, runs, recommended: best, noneWorks: !feasible.length,
     feasibleRange: feasible.length ? [feasible[0].x, feasible[feasible.length - 1].x] : null,
-    shrinking: best.r < 1 }
+    shrinking: best.fading }
 }
 
 // ---- Reinvestment rounds ("snowball") ----
 // The ad test gives `testOrders` orders; their gross profit (GP) funds round 1.
 // Each round, gpToAds % of the previous round's GP buys ads at CAC and the rest is kept as cash.
 // Money recovered = cash kept so far + GP of the current round. Break-even = when it reaches the investment.
-export function snowball(raw) {
+// `rise` = % by which CAC grows in every round after the test (0 = flat CAC, as in the normal tab).
+export function snowball(raw, rise = 0) {
   const v = clean(raw)
   const u = unitEconomics(v)
   const gpPerOrder = u.cac === null ? 0 : v.price - u.returnCost - v.cogs
   const share = Math.min(v.gpToAds, 100) / 100
   const investment = v.importedUnits * v.cogs + v.adTestCost
-  const out = { v, g: gpPerOrder, cac: u.cac, investment, rounds: [], hit: null }
+  const out = { v, g: gpPerOrder, cac: u.cac, investment, rounds: [], hit: null, stopRound: null }
 
   if (!(gpPerOrder > 0) || !(v.testOrders > 0) || !(u.cac > 0)) return out
+
+  const grow = 1 + Math.max(0, rise) / 100
+  const cacAt = k => u.cac * grow ** (k - 1) // round 1 (the first round after the test) uses the stabilised CAC
+  // First round whose CAC is at least the gross profit of one order: from there every extra order loses money.
+  if (u.cac >= gpPerOrder) out.stopRound = 1
+  else if (grow > 1) out.stopRound = 1 + Math.ceil(Math.log(gpPerOrder / u.cac) / Math.log(grow))
 
   const first = {
     k: 0,
@@ -138,11 +155,12 @@ export function snowball(raw) {
   for (let k = 1; k <= 60 && !out.hit; k++) {
     const prev = out.rounds[k - 1]
     const start = prev.start + (1 - share) * prev.gp + prev.inventoryRecovered
-    const orders = (share * prev.gp) / u.cac
+    const orders = (share * prev.gp) / cacAt(k)
     const gp = orders * gpPerOrder
     const inventoryRecovered = orders * v.cogs
     const round = {
       k,
+      cac: cacAt(k),
       orders,
       total: prev.total + orders,
       gp,

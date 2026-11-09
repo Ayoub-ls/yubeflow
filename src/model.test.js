@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { DEFAULTS, breakEven, inventoryPlan, inventoryRecommendation, snowball } from './model.js'
+import { DEFAULTS, breakEven, inventoryPlan, inventoryRecommendation, snowball, unitEconomics } from './model.js'
 import { dictionaries } from './i18n.js'
 
 test('full break-even does not deduct COGS twice', () => {
@@ -79,4 +79,64 @@ test('snowball: 75% needs 2 rounds and 28 orders; 0% never breaks even', () => {
   assert.equal(r.hit.k, 2)
   assert.ok(Math.abs(r.hit.orders - 28) < 1e-9)
   assert.equal(snowball({ ...base, gpToAds: 0 }).hit, null)
+})
+
+
+// ---- rising CAC ("scaling" tabs) ----
+const nearly = (actual, expected, tolerance = 0.02) => assert.ok(Math.abs(actual - expected) < tolerance, `${actual} is not close to ${expected}`)
+const scalingBase = { ...DEFAULTS, price: 3000, cogs: 1000, cpa: 250, deliveryRate: 50, returnFee: 0, adTestCost: 44000, importedUnits: 120, testOrders: 4, gpToAds: 100 }
+
+test('snowball: CAC rise of 0 changes nothing, a rising CAC delays break-even', () => {
+  assert.deepEqual(snowball(scalingBase, 0).hit, snowball(scalingBase).hit)
+  const flat = snowball(scalingBase, 0)
+  const rising = snowball(scalingBase, 50)
+  assert.equal(flat.hit.k, 2)
+  nearly(flat.hit.orders, 68)
+  assert.equal(rising.hit.k, 3)
+  nearly(rising.hit.orders, 96.44)
+})
+test('snowball: CAC grows by the rise in every round after the first', () => {
+  const s = snowball(scalingBase, 50)
+  nearly(s.rounds[1].cac, 500)
+  nearly(s.rounds[2].cac, 750)
+  nearly(s.rounds[3].cac, 1125)
+})
+test('snowball: finds the round where CAC reaches the gross profit per order', () => {
+  assert.equal(snowball(scalingBase, 0).stopRound, null)
+  assert.equal(snowball(scalingBase, 50).stopRound, 5) // 500 x 1.5^4 = 2531 > 2000
+  assert.equal(snowball(scalingBase, 100).stopRound, 3) // 500 x 2^2 = 2000
+})
+test('inventory plan: a rising CAC makes the stock last longer and reports the CAC at stock-out', () => {
+  const ex = { ...scalingBase, currentStock: 80, cashNow: 5000, nextOrderUnits: 40, leadTime: 20, reinvestEvery: 7, gpToAds: 75 }
+  const flat = inventoryPlan(ex)
+  const rising = inventoryPlan(ex, undefined, 25)
+  nearly(flat.tOut, 16.074)
+  nearly(rising.tOut, 18.962)
+  nearly(rising.cacAtOut, 781.25)
+  assert.equal(flat.fading, false)
+  assert.equal(rising.fading, true)
+  assert.equal(inventoryPlan(ex, undefined, 0).tOut, flat.tOut)
+})
+test('inventory recommendation with a rising CAC', () => {
+  const ex = { ...scalingBase, currentStock: 80, cashNow: 5000, nextOrderUnits: 40, leadTime: 20, reinvestEvery: 7 }
+  assert.equal(inventoryRecommendation(ex, 0).recommended.x, 38)
+  const r = inventoryRecommendation(ex, 25)
+  assert.equal(r.recommended.x, 54)
+  nearly(r.feasibleRange[0], 29, 0.01)
+})
+
+
+// ---- confirmation rate ----
+test('CAC uses confirmation x delivery rate, but the return cost uses the delivery rate alone', () => {
+  const u = unitEconomics({ ...DEFAULTS, cpa: 400, confirmationRate: 80, deliveryRate: 50, returnFee: 300 })
+  assert.ok(Math.abs(u.cac - 1000) < 1e-9) // 400 / (0.8 x 0.5)
+  assert.equal(u.returnCost, 300) // 0.5 failed parcels per 0.5 delivered x 300, NOT based on 0.8 x 0.5
+  const all = unitEconomics({ ...DEFAULTS, cpa: 400, confirmationRate: 100, deliveryRate: 50, returnFee: 300 })
+  assert.ok(Math.abs(all.cac - 800) < 1e-9)
+  assert.equal(all.returnCost, 300) // the confirmation rate never changes the return cost
+})
+test('a missing confirmation rate counts as 100%, and 0% makes CAC unavailable', () => {
+  const { confirmationRate, ...old } = DEFAULTS
+  assert.equal(unitEconomics({ ...old, cpa: 500, deliveryRate: 50 }).cac, 1000)
+  assert.equal(unitEconomics({ ...DEFAULTS, confirmationRate: 0 }).cac, null)
 })

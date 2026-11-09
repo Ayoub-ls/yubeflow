@@ -9,7 +9,7 @@ import { DEFAULTS } from './model.js'
 import { LANGUAGES, translator } from './i18n.js'
 
 const KEY = 'yube-cashflow-v3'
-const TABS = [['break', 'navBreak', 'M4 19V5m0 14h16M8 15l4-5 3 3 5-7'], ['planner', 'navPlanner', 'M4 8l8-4 8 4v8l-8 4-8-4V8zm8 4l8-4']]
+const TABS = [['break', 'navBreak', 'M4 19V5m0 14h16M8 15l4-5 3 3 5-7'], ['planner', 'navPlanner', 'M4 8l8-4 8 4v8l-8 4-8-4V8zm8 4l8-4'], ['breakScale', 'navBreakScale', 'M3 17l6-6 4 4 8-8M15 7h6v6'], ['plannerScale', 'navPlannerScale', 'M4 8l8-4 8 4v8l-8 4-8-4V8zM12 12v8M8 14l4 2 4-2']]
 
 const ADMIN_TAB = ['admin', 'navAdmin', 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8']
 
@@ -82,7 +82,7 @@ export default function App({ prefs, user, profile, signOut }) {
             <button className="theme-toggle" onClick={signOut}>{t('signOut')}</button>
           </div>
         </div>
-        {view === 'admin' && isAdmin ? <Admin t={t} locale={locale} me={profile} /> : view === 'break' ? <BreakEven {...props} /> : <Planner {...props} />}
+        {view === 'admin' && isAdmin ? <Admin t={t} locale={locale} me={profile} /> : view === 'break' ? <BreakEven {...props} /> : view === 'breakScale' ? <BreakEven {...props} scaling /> : view === 'plannerScale' ? <Planner {...props} scaling /> : <Planner {...props} />}
       </div>
       <nav className="mobile-nav">
         {tabs.map(([id, label, d]) => (
